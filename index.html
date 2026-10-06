@@ -282,7 +282,7 @@ async function pull(){
   const hd=d=>d&&d.notes&&d.notes.length+d.sales.length+d.exp.length>0,r=data&&data.data;
   if(!r)return push();
   const lt=db.ts||0,rt=r.ts||0;
-  if(rt>lt||(lt===0&&!hd(db))){db=r;save();location.reload()}
+  if(rt>lt||(lt===0&&!hd(db)&&hd(r))){db=r;save();location.reload()}
   else if(lt>rt||(hd(db)&&!hd(r)))push();
   else sync('Sincronizado ✓');
 }
