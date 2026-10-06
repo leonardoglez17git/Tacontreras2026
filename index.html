@@ -56,6 +56,7 @@ window.addEventListener('error',function(e){showErr(e.message)});
 window.addEventListener('unhandledrejection',function(e){showErr(e.reason&&e.reason.message||e.reason)});
 </script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 /* ===== SINCRONIZACIÓN (opcional) =====
    Pega aquí los dos datos de tu proyecto de Supabase.
@@ -255,9 +256,22 @@ function viewCat(){
 }
 
 /* config */
+function exportXlsx(){
+  if(typeof XLSX==='undefined')return alert('Necesita internet para generar el Excel. Revisa tu conexión e inténtalo de nuevo.');
+  const so=(a,f)=>[...a].sort((x,y)=>x.d<y.d?-1:x.d>y.d?1:(x.id||0)-(y.id||0));
+  const nn={},notas=so(db.notes).map(x=>{nn[x.d]=(nn[x.d]||0)+1;return{Fecha:x.d,'Nota':nn[x.d],'Importe':x.m}});
+  const prod=so(db.sales).map(x=>{const p=db.products.find(y=>y.id===x.p)||{},pr=x.pr??p.price,c=x.c??p.cost;
+    return{Fecha:x.d,Producto:pname(x.p),'Área':p.a||'',Cantidad:x.q,'Precio':pr??'','Venta':pr==null?'':x.q*pr,'Costo unitario':c??'','Costo total':c==null?'':x.q*c}});
+  const gas=so(db.exp).map(x=>({Fecha:x.d,Concepto:x.k,'Categoría':x.c,Tipo:x.t,Importe:x.m,Nota:x.note||''}));
+  const ds=[...new Set([...db.notes,...db.sales,...db.exp].map(x=>x.d))].sort();
+  const res=ds.map(d=>{const c=calc([d,d]);return{Fecha:d,Notas:c.n,'Venta':c.venta,'Costo proveedor':c.provC,'Venta real':c.venta-c.provC,Gastos:c.gT,Ganancia:c.venta-c.provC-c.gT,Retiros:c.ret,Tacos:c.byA.Tacos,Postres:c.byA.Postres,Refrescos:c.byA.Refrescos,Cervezas:c.byA.Cervezas,Aguas:c.byA.Aguas,'Costos faltantes':Object.keys(c.provMiss).join(', ')}});
+  const wb=XLSX.utils.book_new();
+  [['Resumen diario',res],['Notas',notas],['Productos vendidos',prod],['Gastos',gas]].forEach(([n,r])=>XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(r),n));
+  XLSX.writeFile(wb,'taqueria-'+today()+'.xlsx');
+}
 function backup(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(db)],{type:'application/json'}));a.download='respaldo-taqueria-'+today()+'.json';a.click()}
 function restore(f){const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.products)throw 0;if(confirm('Esto reemplaza los datos actuales. ¿Continuar?')){db=d;go()}}catch(e){alert('Archivo no válido.')}};r.readAsText(f)}
-function viewCfg(){return`<div class="card"><h2>Respaldo</h2><p class="mut">Tus datos se guardan en este navegador de esta computadora. Descarga un respaldo seguido, sobre todo antes de borrar el historial del navegador.</p><div class="row"><button class="b" onclick="backup()">Descargar respaldo</button><label class="g" style="padding:8px 12px;border-radius:8px;border:1px solid var(--ln);cursor:pointer">Restaurar respaldo<input type="file" accept=".json" hidden onchange="restore(this.files[0])"></label></div></div>`}
+function viewCfg(){return`<div class="card"><h2>Respaldo y Excel</h2><p class="mut">Excel crea un archivo con 4 hojas (resumen diario, notas, productos vendidos y gastos) para revisarlo o compartirlo. El respaldo es otro archivo, solo para restaurar la app.</p><p class="mut">Tus datos se guardan en este navegador de esta computadora. Descarga un respaldo seguido, sobre todo antes de borrar el historial del navegador.</p><div class="row"><button class="b" onclick="exportXlsx()">Exportar a Excel</button><button class="b" onclick="backup()">Descargar respaldo</button><label class="g" style="padding:8px 12px;border-radius:8px;border:1px solid var(--ln);cursor:pointer">Restaurar respaldo<input type="file" accept=".json" hidden onchange="restore(this.files[0])"></label></div></div>`}
 
 function render(){
   const T=[['home','Inicio'],['cap','Capturar'],['res','Resultados'],['cat','Catálogo'],['cfg','Respaldo']];
