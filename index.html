@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Control de la taquería</title>
+<style>
+:root{--bg:#f2f4f0;--card:#fff;--ink:#1b2a22;--mut:#64736a;--ac:#0e6b4f;--acs:#dcebe4;--warn:#b7410e;--ws:#fbe9df;--ln:#d9dfd9}
+@media (prefers-color-scheme:dark){:root{--bg:#141b17;--card:#1e2823;--ink:#e8efe9;--mut:#9aaaa0;--ac:#4cc39a;--acs:#25382f;--warn:#f08a5d;--ws:#3a2a22;--ln:#2f3d36}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 "Trebuchet MS",system-ui,sans-serif;padding-bottom:40px}
+header{background:var(--ac);color:#fff;padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header h1{font-size:18px;margin:0;flex:1}
+header input{font:inherit;padding:6px 8px;border-radius:8px;border:0}
+nav{display:flex;gap:4px;padding:8px 12px;position:sticky;top:0;background:var(--bg);z-index:5;overflow-x:auto}
+nav button{flex:1;min-width:90px;padding:10px;border:1px solid var(--ln);background:var(--card);color:var(--ink);border-radius:10px;font:inherit;cursor:pointer}
+nav button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+main{max-width:900px;margin:0 auto;padding:0 12px}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:12px;padding:14px;margin:12px 0}
+h2{font-size:17px;margin:0 0 10px}
+h3{font-size:15px;margin:14px 0 6px;color:var(--mut)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input,select{font:inherit;padding:10px;border:1px solid var(--ln);border-radius:8px;background:var(--bg);color:var(--ink);min-width:0}
+input[type=number]{width:110px}
+button.b{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:10px 14px;font:inherit;cursor:pointer}
+button.g{background:none;border:1px solid var(--ln);color:var(--ink);border-radius:8px;padding:8px 12px;font:inherit;cursor:pointer}
+button.x{background:none;border:0;color:var(--warn);cursor:pointer;font-size:18px}
+.li{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--ln);gap:8px}
+.li:last-child{border:0}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.k{background:var(--bg);border-radius:10px;padding:10px}
+.k b{display:block;font-size:20px}
+.k span{font-size:13px;color:var(--mut)}
+.big b{font-size:26px}
+.warn{background:var(--ws);color:var(--warn);padding:8px 10px;border-radius:8px;margin:8px 0;font-size:14px}
+.ok{background:var(--acs);color:var(--ac);padding:8px 10px;border-radius:8px;margin:8px 0;font-size:14px}
+.mut{color:var(--mut);font-size:14px}
+.q{display:flex;align-items:center;gap:6px}
+.q button{width:40px;height:40px;border-radius:8px;border:1px solid var(--ln);background:var(--card);color:var(--ink);font-size:20px;cursor:pointer}
+.q input{width:60px;text-align:center}
+.bar{height:10px;background:var(--ac);border-radius:5px;min-width:2px}
+.seg{display:flex;gap:6px;margin-bottom:8px}
+.seg button{flex:1}
+.seg .on{background:var(--ac);color:#fff;border-color:var(--ac)}
+table{width:100%;border-collapse:collapse}
+td,th{padding:6px 4px;text-align:left;font-size:15px}
+</style>
+</head>
+<body>
+<header><h1>Control de la taquería</h1><label>Día <input type="date" id="dt"></label><span id="sync" style="font-size:13px"></span><button id="out" hidden onclick="logout()" style="font:inherit;background:none;color:#fff;border:1px solid #fff;border-radius:8px;padding:5px 10px;cursor:pointer">Salir</button></header>
+<nav id="nav"></nav>
+<main id="app"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+/* ===== SINCRONIZACIÓN (opcional) =====
+   Pega aquí los dos datos de tu proyecto de Supabase.
+   Si los dejas vacíos, la app funciona solo en este navegador, sin usuario. */
+const SB_URL="kivgmnmljlwnwbmrdicv";
+const SB_KEY="us-west-2";
+/* ===================================== */
+const K='taqueria_v1';
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money=n=>n==null?'—':n.toLocaleString('es-MX',{style:'currency',currency:'MXN'});
+const num=n=>n.toLocaleString('es-MX');
+const AREAS=['Tacos','Postres','Refrescos','Cervezas','Aguas','Otro'];
+const CATALOG=[['Taco de arrachera','Tacos',40],['Taco de chistorra','Tacos',40],['Taco de aguja norteña','Tacos',40],['Taco campechano especial','Tacos',35],['Taco de bistec','Tacos',30],['Taco de longaniza','Tacos',30],['Taco campechano','Tacos',30],['Taco de pollo','Tacos',30],['Taco de cecina natural','Tacos',30],['Taco de cecina enchilada','Tacos',30],['Taco de costilla','Tacos',30],['Flan','Postres'],['Gelatina','Postres'],['Arroz con leche','Postres'],['Pastel de Matilda','Postres'],['Pastel de tortuga','Postres'],['Cheesecake','Postres'],['Galletas con chispas de chocolate','Postres'],['Muffin','Postres'],['Modelo','Cervezas',35],['Victoria','Cervezas',35],['Coca-Cola','Refrescos',30],['Jarrito','Refrescos',30],['Sangría','Refrescos',30],['Boing','Refrescos',30],['Agua mineral','Refrescos',30],['Jamaica','Aguas',35],['Horchata','Aguas',35],['Tamarindo','Aguas',35]];
+const today=()=>{const d=new Date();return new Date(d-d.getTimezoneOffset()*6e4).toISOString().slice(0,10)};
+function seed(){
+  let id=1;const P=([n,a,pr])=>({id:id++,n,a,price:pr??null,cost:null,on:true});
+  return{v:2,nid:100,products:CATALOG.map(P),
+  cats:[['Carne','Compra de insumos'],['Tortillas','Compra de insumos'],['Verduras','Compra de insumos'],['Ingredientes para postres','Compra de insumos'],['Ingredientes para aguas','Compra de insumos'],['Bebidas e insumos','Compra de insumos'],['Desechables','Compra de insumos'],['Gas','Operativo'],['Sueldos','Operativo'],['Limpieza','Operativo'],['Transporte','Operativo'],['Mantenimiento','Operativo'],['Otros','Otro egreso']],
+  notes:[],sales:[],exp:[]};
+}
+let db;try{db=JSON.parse(localStorage.getItem(K))}catch(e){}
+db=db||seed();
+if(!(db.v>=2)){CATALOG.forEach(([n,a,pr])=>{const p=db.products.find(x=>x.n.toLowerCase()===n.toLowerCase());if(!p)db.products.push({id:db.nid++,n,a,price:pr??null,cost:null,on:true});else if(p.price==null&&pr!=null)p.price=pr});const t=db.products.find(x=>x.n==='Taco');if(t&&!db.sales.some(x=>x.p===t.id))t.on=false;db.v=2;save()}
+if(db.v<3){db.products.forEach(p=>{if(p.prov===undefined)p.prov=p.a==='Postres'||p.a==='Aguas';if(p.a==='Aguas'&&p.cost==null)p.cost=20});
+if(!db.cats.some(c=>c[0]==='Retiro del dueño'))db.cats.push(['Retiro del dueño','Retiro']);db.cash=db.cash||0;db.goal=db.goal||0;db.closed=db.closed||{};db.v=3;save()}
+if(db.v<5){CATALOG.filter(x=>x[1]==='Cervezas').forEach(([n,a,pr])=>{if(!db.products.some(p=>p.n===n))db.products.push({id:db.nid++,n,a,price:pr,cost:null,on:true,prov:false})});const cv=db.products.find(x=>x.n==='Cerveza');if(cv&&!db.sales.some(x=>x.p===cv.id))cv.on=false;db.v=5;save()}
+let st={tab:'home',date:today(),per:'day'};
+function save(){try{localStorage.setItem(K,JSON.stringify(db))}catch(e){alert('No se pudo guardar en este navegador. Descarga un respaldo desde Config.')}}
+function go(){db.ts=Date.now();save();render();queue()}
+
+/* fechas */
+const dd=s=>new Date(s+'T12:00:00');
+const iso=d=>d.toISOString().slice(0,10);
+function range(p,s){
+  const d=dd(s);
+  if(p==='day')return[s,s];
+  if(p==='week'){const w=(d.getDay()+6)%7;const a=new Date(d);a.setDate(d.getDate()-w);const b=new Date(a);b.setDate(a.getDate()+6);return[iso(a),iso(b)]}
+  return[s.slice(0,8)+'01',iso(new Date(d.getFullYear(),d.getMonth()+1,0,12))];
+}
+const inR=(x,r)=>x.d>=r[0]&&x.d<=r[1];
+const pname=id=>(db.products.find(p=>p.id===id)||{n:'(eliminado)'}).n;
+const parea=id=>(db.products.find(p=>p.id===id)||{a:'Otro'}).a;
+
+/* cálculos */
+function calc(r){
+  const N=db.notes.filter(x=>inR(x,r)),S=db.sales.filter(x=>inR(x,r)),E=db.exp.filter(x=>inR(x,r));
+  const venta=N.reduce((a,x)=>a+x.m,0);
+  const byP={},byA={Tacos:0,Postres:0,Refrescos:0,Cervezas:0,Aguas:0,Otro:0};
+  const aV={Tacos:0,Postres:0,Refrescos:0,Cervezas:0,Aguas:0,Otro:0};let provC=0,provMiss={};let vp=0,sinPrecio=0,vC=0,cost=0,vSinC=0;
+  S.forEach(x=>{const p=db.products.find(y=>y.id===x.p)||{},pr=x.pr??p.price,cc=x.c??p.cost;byP[x.p]=(byP[x.p]||0)+x.q;byA[parea(x.p)]+=x.q;
+    if(pr==null)sinPrecio+=x.q;else{const v=x.q*pr;vp+=v;aV[parea(x.p)]+=v;if(cc==null)vSinC+=v;else{vC+=v;cost+=x.q*cc}}
+    if(p.prov){if(cc==null)provMiss[p.n]=1;else provC+=x.q*cc}});
+  const top=Object.entries(byP).sort((a,b)=>b[1]-a[1]);
+  const E2=E.filter(x=>x.t!=='Retiro'),ret=E.filter(x=>x.t==='Retiro').reduce((a,x)=>a+x.m,0);
+  const gT=E2.reduce((a,x)=>a+x.m,0),byC={},byT={};
+  E2.forEach(x=>{byC[x.c]=(byC[x.c]||0)+x.m;byT[x.t]=(byT[x.t]||0)+x.m});
+  return{aV,provC,provMiss,ret,N,E,venta,n:N.length,ticket:N.length?venta/N.length:null,byP,byA,top,vp,sinPrecio,vC,cost,vSinC,gT,byC,byT};
+}
+
+/* captura */
+function chk(){if(db.closed[st.date]){alert('Este día está cerrado. Reábrelo para modificarlo.');return true}return false}
+function closeDay(){db.closed[st.date]=!db.closed[st.date];go()}
+function addNote(){if(chk())return;const v=parseFloat($('#na').value);if(!(v>0))return alert('Escribe un importe mayor a 0.');
+  if(v>20000&&!confirm('El importe es muy alto ('+money(v)+'). ¿Es correcto?'))return;
+  db.notes.push({id:db.nid++,d:st.date,m:v});go();setTimeout(()=>$('#na')&&$('#na').focus(),0)}
+function delNote(id){if(chk())return;db.notes=db.notes.filter(x=>x.id!==id);go()}
+function setQty(pid,q){if(chk())return render();q=Math.max(0,Math.floor(Number(q)||0));
+  let e=db.sales.find(x=>x.d===st.date&&x.p===pid);const p=db.products.find(x=>x.id===pid);
+  if(!e){if(q<1)return render();e={d:st.date,p:pid,q:0,pr:p.price,c:p.cost};db.sales.push(e)}
+  e.q=q;if(e.pr==null){e.pr=p.price;e.c=p.cost}
+  if(q<1)db.sales=db.sales.filter(x=>x!==e);go()}
+const qty=pid=>(db.sales.find(x=>x.d===st.date&&x.p===pid)||{q:0}).q;
+function addExp(){if(chk())return;const c=$('#ec').value,m=parseFloat($('#em').value),con=$('#eco').value.trim()||c;
+  if(!(m>0))return alert('Escribe un importe mayor a 0.');
+  if(/postre|agua/i.test(c)&&!confirm('Los postres y aguas ya se descuentan como costo por pieza en la venta real. Si registras el pago aquí, se contaría doble. ¿Capturarlo de todos modos?'))return;
+  if(db.exp.some(x=>x.d===st.date&&x.c===c&&x.m===m&&x.k===con)&&!confirm('Ya hay un gasto igual en este día. ¿Capturarlo de nuevo?'))return;
+  const t=(db.cats.find(x=>x[0]===c)||[0,'Otro egreso'])[1];
+  db.exp.push({id:db.nid++,d:st.date,c,t,k:con,m,note:$('#en').value.trim()});go()}
+function delExp(id){if(chk())return;db.exp=db.exp.filter(x=>x.id!==id);go()}
+
+function viewCap(){
+  const c=calc([st.date,st.date]),w=calc(range('week',st.date)),mo=calc(range('month',st.date));
+  let h=`<div class="card"><div class="row" style="justify-content:space-between"><h2>Resumen del día</h2><button class="g" onclick="closeDay()">${db.closed[st.date]?'🔒 Reabrir día':'Cerrar día'}</button></div><div class="kpis">
+  <div class="k"><b>${money(c.venta)}</b><span>Venta (suma de notas)</span></div>
+  <div class="k"><b>${c.n}</b><span>Notas</span></div>
+  <div class="k"><b>${num(c.byA.Tacos)}</b><span>Tacos del día</span></div>
+  <div class="k"><b>${money(c.ticket)}</b><span>Promedio por nota</span></div>
+  <div class="k"><b>${money(c.gT)}</b><span>Gastos del día</span></div>
+  <div class="k"><b>${money(w.venta)}</b><span>Venta de la semana</span></div>
+  <div class="k"><b>${money(mo.venta)}</b><span>Venta del mes</span></div></div>`;
+  if(c.n&&c.sinPrecio==0&&Object.keys(c.byP).length){const d=c.venta-c.vp;
+    h+=d===0?`<div class="ok">Notas y productos coinciden.</div>`:`<div class="warn">Notas: ${money(c.venta)} · Productos × precio: ${money(c.vp)} · Diferencia: ${money(d)}. Revisa si falta capturar algo, hubo descuento o propina.</div>`}
+  else if(c.sinPrecio)h+=`<div class="warn">Hay ${c.sinPrecio} piezas sin precio configurado. Captura los precios en Catálogo para conciliar.</div>`;
+  h+=`</div><div class="card"><h2>Notas del día</h2><div class="row"><input id="na" type="number" inputmode="decimal" placeholder="Importe $" onkeydown="if(event.key==='Enter')addNote()"><button class="b" onclick="addNote()">Agregar nota</button></div>`;
+  h+=c.N.map((x,i)=>`<div class="li"><span>Nota ${i+1}</span><span>${money(x.m)} <button class="x" onclick="delNote(${x.id})" aria-label="Borrar">✕</button></span></div>`).join('')||'<p class="mut">Aún no hay notas.</p>';
+  h+=`</div><div class="card"><h2>Productos vendidos</h2>`;
+  AREAS.forEach(a=>{const ps=db.products.filter(p=>p.on&&p.a===a);if(!ps.length)return;h+=`<h3>${a}</h3>`;
+    ps.forEach(p=>h+=`<div class="li"><span>${esc(p.n)}<br><span class="mut">${p.price==null?'Falta precio':money(p.price)}</span></span><span class="q"><button onclick="setQty(${p.id},${qty(p.id)-1})">−</button><input type="number" inputmode="numeric" value="${qty(p.id)}" onchange="setQty(${p.id},this.value)"><button onclick="setQty(${p.id},${qty(p.id)+1})">+</button></span></div>`)});
+  h+=`</div><div class="card"><h2>Gastos y compras</h2><div class="row">
+  <select id="ec">${db.cats.map(x=>`<option>${esc(x[0])}</option>`).join('')}</select>
+  <input id="eco" placeholder="Concepto (opcional)"><input id="em" type="number" inputmode="decimal" placeholder="Importe $"><input id="en" placeholder="Nota (opcional)">
+  <button class="b" onclick="addExp()">Agregar gasto</button></div>`;
+  h+=c.E.map(x=>`<div class="li"><span>${esc(x.k)} <span class="mut">${esc(x.c)} · ${esc(x.t)}${x.note?' · '+esc(x.note):''}</span></span><span>${money(x.m)} <button class="x" onclick="delExp(${x.id})" aria-label="Borrar">✕</button></span></div>`).join('')||'<p class="mut">Aún no hay gastos.</p>';
+  return h+'</div>';
+}
+
+
+/* inicio */
+function dayG(d){const c=calc([d,d]);return c.venta-c.provC-c.gT-c.ret}
+function cashBefore(d){const ds=[...new Set([...db.notes,...db.sales,...db.exp].map(x=>x.d))].filter(x=>x<d);return(db.cash||0)+ds.reduce((a,x)=>a+dayG(x),0)}
+function shift(n){const d=dd(st.date);if(st.per==='day')d.setDate(d.getDate()+n);else if(st.per==='week')d.setDate(d.getDate()+7*n);else d.setMonth(d.getMonth()+n,1);st.date=iso(d);$('#dt').value=st.date;render()}
+function pick(d){st.date=d;$('#dt').value=d;render()}
+const rw=(l,v,o='')=>`<div class="li" style="${o}"><span>${l}</span><b>${v}</b></div>`;
+function chart(cr){
+  const days=[];for(let d=dd(cr[0]);iso(d)<=cr[1];d.setDate(d.getDate()+1))days.push(iso(d));
+  let cum=0;const rows=days.map(d=>{const c=calc([d,d]),g=c.venta-c.provC-c.gT;cum+=g;return{d,g,cum,v:c.venta,gt:c.gT}});
+  const mx=Math.max(1,...rows.map(x=>Math.abs(x.g)),...rows.map(x=>Math.abs(x.cum))),W=600,H=210,m=96,bw=W/rows.length,y=v=>m-v/mx*(m-12);
+  let g=`<svg viewBox="0 0 ${W} ${H}" style="width:100%"><line x1="0" x2="${W}" y1="${m}" y2="${m}" stroke="var(--ln)"/>`;
+  rows.forEach((x,i)=>{g+=`<rect x="${i*bw+bw*.15}" y="${x.g>=0?y(x.g):m}" width="${bw*.7}" height="${Math.max(Math.abs(y(x.g)-m),1)}" rx="2" fill="${x.g>=0?'var(--ac)':'var(--warn)'}" opacity="${x.d===st.date?1:.6}" style="cursor:pointer" onclick="pick('${x.d}')"/><text x="${i*bw+bw/2}" y="${H-6}" font-size="11" text-anchor="middle" fill="var(--mut)">${+x.d.slice(8)}</text>`});
+  g+=`<polyline fill="none" stroke="var(--ink)" stroke-width="2" points="${rows.map((x,i)=>(i*bw+bw/2)+','+y(x.cum)).join(' ')}"/></svg>`;
+  const s=rows.find(x=>x.d===st.date);
+  return g+(s?`<p class="mut">Día ${s.d}: venta ${money(s.v)} · gastos ${money(s.gt)} · ganancia ${money(s.g)} · acumulado ${money(s.cum)}</p>`:'');
+}
+function viewHome(){
+  const r=range(st.per,st.date),c=calc(r),vr=c.venta-c.provC,gan=vr-c.gT,c0=cashBefore(r[0]),c1=c0+gan-c.ret;
+  const L={day:'del día',week:'de la semana',month:'del mes'}[st.per],P={day:'el día',week:'la semana',month:'el mes'}[st.per];
+  const seg=['day','week','month'].map((p,i)=>`<button class="g ${st.per===p?'on':''}" onclick="st.per='${p}';render()">${['Hoy','Semana','Mes'][i]}</button>`).join('');
+  let h=`<div class="seg">${seg}</div><div class="row" style="justify-content:space-between;margin-bottom:8px"><button class="g" onclick="shift(-1)">◀</button><b>${st.per==='day'?st.date:r[0]+' → '+r[1]}</b><span><button class="g" onclick="shift(1)">▶</button> <button class="g" onclick="st.date=today();$('#dt').value=st.date;render()">Hoy</button></span></div>`;
+  const miss=Object.keys(c.provMiss);
+  if(miss.length)h+=`<div class="warn">Falta el costo de proveedor de: ${miss.map(esc).join(', ')}. La venta real está incompleta. Captúralo en Catálogo.</div>`;
+  if(c.sinPrecio)h+=`<div class="warn">Hay ${c.sinPrecio} piezas sin precio; el desglose por producto está incompleto.</div>`;
+  if(!c.n&&!c.E.length)h+=`<div class="warn">No hay notas ni gastos capturados en ${P}.</div>`;
+  else if(gan<0)h+=`<div class="warn">Los gastos superan a la venta real en ${P}.</div>`;
+  h+=`<div class="kpis big"><div class="k"><b>${money(c.venta)}</b><span>Venta ${L}</span></div><div class="k"><b>${money(c.gT)}</b><span>Gastos</span></div><div class="k"><b>${money(vr)}</b><span>Venta real</span></div><div class="k"><b style="color:${gan<0?'var(--warn)':'var(--ac)'}">${money(gan)}</b><span>Ganancia</span></div></div>`;
+  h+=`<div class="card"><h2>Balance ${L}</h2>`+rw('Venta total (notas)',money(c.venta))
+   +['Tacos','Postres','Refrescos','Cervezas','Aguas'].map(a=>`<div class="li mut"><span>&nbsp;&nbsp;${a} · ${num(c.byA[a])} pzs</span><span>${money(c.aV[a])}</span></div>`).join('')
+   +rw('− Costo de proveedor (postres y aguas)',money(c.provC))+rw('= Venta real',money(vr),'background:var(--acs)')
+   +rw('− Gastos',money(c.gT))+rw('= Ganancia',money(gan),'background:var(--acs)')
+   +`<p class="mut">Venta real = lo que te queda de las ventas después de pagar a tu proveedor los postres y aguas. Ejemplo: un agua vendida en $35 con costo de $20 deja $15. El desglose por producto sale de cantidad × precio; la venta total son las notas.</p></div>`;
+  h+=`<div class="card"><h2>Caja estimada</h2>`+rw('Caja al iniciar '+P,money(c0))+rw('+ Ganancia '+L,money(gan))+(c.ret?rw('− Retiros del dueño',money(c.ret)):'')+rw('= Caja al cierre',money(c1),'background:var(--acs)')
+   +`<p class="mut">La caja con la que empieza cada semana es lo que dejó la anterior, ya después de gastos. Si sacas dinero para ti, captúralo como gasto en la categoría "Retiro del dueño": baja la caja pero no cuenta como gasto del negocio.</p></div>`;
+  h+=`<div class="card"><h2>Ganancia día con día</h2><p class="mut">Barras: ganancia de cada día. Línea: acumulado. Toca una barra para ver ese día.</p>${chart(range(st.per==='month'?'month':'week',st.date))}<button class="g" onclick="st.tab='cap';render()">Capturar el día ${st.date}</button></div>`;
+  const cm=calc(range('month',st.date)),vrm=cm.venta-cm.provC,goal=db.goal||0;
+  h+=`<div class="card"><h2>Controles</h2><div class="row"><label class="mut">Caja con la que inicié $<br><input type="number" value="${db.cash||''}" onchange="db.cash=parseFloat(this.value)||0;go()"></label><label class="mut">Meta mensual de venta real $<br><input type="number" value="${goal||''}" onchange="db.goal=parseFloat(this.value)||0;go()"></label></div>`
+   +(goal?`<p>Avance del mes: <b>${money(vrm)}</b> de ${money(goal)} (${(vrm/goal*100).toFixed(0)}%)</p><div style="background:var(--bg);border-radius:5px"><div class="bar" style="width:${Math.min(100,Math.max(0,vrm/goal*100))}%"></div></div>`:'<p class="mut">Define una meta para ver tu avance.</p>')+`</div>`;
+  return h;
+}
+
+/* resumen */
+function bars(obj,fmt){const e=Object.entries(obj).sort((a,b)=>b[1]-a[1]);if(!e.length)return'<p class="mut">Sin datos.</p>';const mx=e[0][1];
+  return e.map(([k,v])=>`<div style="margin:6px 0"><div class="row" style="justify-content:space-between"><span>${esc(k)}</span><b>${fmt(v)}</b></div><div class="bar" style="width:${Math.max(2,v/mx*100)}%"></div></div>`).join('')}
+function viewRes(){
+  const r=range(st.per,st.date),c=calc(r);
+  const seg=['day','week','month'].map((p,i)=>`<button class="g ${st.per===p?'on':''}" onclick="st.per='${p}';render()">${['Hoy','Semana','Mes'][i]}</button>`).join('');
+  let h=`<div class="seg">${seg}</div><p class="mut">Del ${r[0]} al ${r[1]} (según el día elegido arriba)</p>`;
+  const res=c.venta-c.provC-c.gT;
+  h+=`<div class="card"><div class="kpis big"><div class="k"><b>${money(c.venta)}</b><span>Venta (notas)</span></div><div class="k"><b>${money(c.gT)}</b><span>Egresos</span></div><div class="k"><b style="color:${res<0?'var(--warn)':'var(--ac)'}">${money(res)}</b><span>Ganancia</span></div></div>
+  <p class="mut">Ganancia = venta (notas) − costo de proveedor − gastos. Mira el detalle en Inicio.</p></div>`;
+  h+=`<div class="card"><h2>Operación</h2><div class="kpis"><div class="k"><b>${c.n}</b><span>Notas</span></div><div class="k"><b>${money(c.ticket)}</b><span>Ticket promedio</span></div>
+  <div class="k"><b>${num(c.byA.Tacos)}</b><span>Tacos</span></div><div class="k"><b>${num(c.byA.Postres)}</b><span>Postres</span></div><div class="k"><b>${num(c.byA.Refrescos)}</b><span>Refrescos</span></div><div class="k"><b>${num(c.byA.Cervezas)}</b><span>Cervezas</span></div><div class="k"><b>${num(c.byA.Aguas)}</b><span>Aguas</span></div>
+  <div class="k"><b>${c.top[0]?esc(pname(+c.top[0][0])):'—'}</b><span>Más vendido${c.top[0]?' ('+c.top[0][1]+')':''}</span></div></div></div>`;
+  const tt=c.byA.Tacos,tc={},days={};let tv=0;
+  db.sales.filter(x=>inR(x,r)&&parea(x.p)==='Tacos').forEach(x=>{tc[pname(x.p)]=(tc[pname(x.p)]||0)+x.q;days[x.d]=(days[x.d]||0)+x.q;if(x.pr!=null)tv+=x.q*x.pr});
+  const nd=Object.keys(days).length;
+  h+=`<div class="card"><h2>Tacos: cuántos y de qué</h2><div class="kpis"><div class="k"><b>${num(tt)}</b><span>Tacos vendidos</span></div><div class="k"><b>${money(tv)}</b><span>Venta de tacos</span></div><div class="k"><b>${nd?num(Math.round(tt/nd)):'—'}</b><span>Promedio por día con venta</span></div></div>
+  <h3>Por tipo (piezas y % del total)</h3>${bars(tc,v=>v+' · '+(v/tt*100).toFixed(0)+'%')}`;
+  if(st.per!=='day')h+=`<h3>Tacos por día</h3>${bars(days,v=>v+' pzs')}`;
+  h+=`</div>`;
+  const marg=c.vC-c.cost;
+  h+=`<div class="card"><h2>Margen de productos</h2>`;
+  if(c.vC>0)h+=`<div class="kpis"><div class="k"><b>${money(c.vC)}</b><span>Venta con costo</span></div><div class="k"><b>${money(c.cost)}</b><span>Costo</span></div><div class="k"><b>${money(marg)}</b><span>Utilidad bruta</span></div><div class="k"><b>${(marg/c.vC*100).toFixed(1)}%</b><span>Margen</span></div></div>`;
+  h+=(c.vSinC>0||c.sinPrecio>0)?`<div class="warn">Cálculo parcial: ${money(c.vSinC)} de venta y ${c.sinPrecio} piezas sin precio no tienen información suficiente.${c.vC==0?' No se puede calcular la utilidad.':''}</div>`:(c.vC>0?'<div class="ok">Cálculo completo con costos registrados.</div>':'<p class="mut">Sin productos vendidos en este periodo.</p>');
+  h+=`</div><div class="card"><h2>Productos más vendidos</h2>${bars(Object.fromEntries(c.top.map(([k,v])=>[pname(+k),v])),v=>v+' pzs')}</div>`;
+  h+=`<div class="card"><h2>Gasto por categoría</h2>${bars(c.byC,money)}</div><div class="card"><h2>Gasto por tipo</h2>${bars(c.byT,money)}</div>`;
+  return h;
+}
+
+/* catálogo */
+function setP(id,f,v){const p=db.products.find(x=>x.id===id);v=v.trim()===''?null:parseFloat(v);
+  if(v!=null&&!(v>=0))return render();p[f]=v;go()}
+function addProd(){const n=$('#pn').value.trim();if(!n)return;
+  if(db.products.some(p=>p.n.toLowerCase()===n.toLowerCase()))return alert('Ese producto ya existe.');
+  db.products.push({id:db.nid++,n,a:$('#pa').value,price:null,cost:null,on:true});go()}
+function togProv(id){const p=db.products.find(x=>x.id===id);p.prov=!p.prov;go()}
+function togP(id){const p=db.products.find(x=>x.id===id);p.on=!p.on;go()}
+function addCat(){const n=$('#cn').value.trim();if(!n)return;if(db.cats.some(c=>c[0].toLowerCase()===n.toLowerCase()))return alert('Esa categoría ya existe.');
+  db.cats.push([n,$('#ct').value]);go()}
+function viewCat(){
+  let h=`<div class="card"><h2>Precios y costos</h2><p class="mut">Los cambios aplican a ventas nuevas. Las ventas ya capturadas conservan su precio. Deja el costo vacío si no lo sabes: el sistema no lo inventa. Marca "Proveedor" en lo que compras ya hecho (postres, aguas): su costo se descuenta para calcular la venta real.</p><table><tr><th>Producto</th><th>Precio $</th><th>Costo $</th><th>Proveedor</th><th></th></tr>`;
+  AREAS.forEach(a=>{const ps=db.products.filter(p=>p.a===a);if(!ps.length)return;h+=`<tr><td colspan="5"><h3>${a}</h3></td></tr>`;
+    ps.forEach(p=>h+=`<tr style="${p.on?'':'opacity:.5'}"><td>${esc(p.n)}</td><td><input type="number" inputmode="decimal" style="width:90px" value="${p.price??''}" onchange="setP(${p.id},'price',this.value)"></td><td><input type="number" inputmode="decimal" style="width:90px" value="${p.cost??''}" onchange="setP(${p.id},'cost',this.value)"></td><td><input type="checkbox" ${p.prov?'checked':''} onchange="togProv(${p.id})"></td><td><button class="g" onclick="togP(${p.id})">${p.on?'Ocultar':'Activar'}</button></td></tr>`)});
+  h+=`</table></div><div class="card"><h2>Agregar producto</h2><div class="row"><input id="pn" placeholder="Nombre (ej. Taco de pastor)"><select id="pa">${AREAS.map(a=>`<option>${a}</option>`).join('')}</select><button class="b" onclick="addProd()">Agregar</button></div></div>`;
+  h+=`<div class="card"><h2>Categorías de gasto</h2><div class="row"><input id="cn" placeholder="Nueva categoría"><select id="ct"><option>Operativo</option><option>Compra de insumos</option><option>Otro egreso</option></select><button class="b" onclick="addCat()">Agregar</button></div><p class="mut">${db.cats.map(c=>esc(c[0])+' ('+c[1]+')').join(', ')}</p></div>`;
+  return h;
+}
+
+/* config */
+function backup(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(db)],{type:'application/json'}));a.download='respaldo-taqueria-'+today()+'.json';a.click()}
+function restore(f){const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(!d.products)throw 0;if(confirm('Esto reemplaza los datos actuales. ¿Continuar?')){db=d;go()}}catch(e){alert('Archivo no válido.')}};r.readAsText(f)}
+function viewCfg(){return`<div class="card"><h2>Respaldo</h2><p class="mut">Tus datos se guardan en este navegador de esta computadora. Descarga un respaldo seguido, sobre todo antes de borrar el historial del navegador.</p><div class="row"><button class="b" onclick="backup()">Descargar respaldo</button><label class="g" style="padding:8px 12px;border-radius:8px;border:1px solid var(--ln);cursor:pointer">Restaurar respaldo<input type="file" accept=".json" hidden onchange="restore(this.files[0])"></label></div></div>`}
+
+function render(){
+  const T=[['home','Inicio'],['cap','Capturar'],['res','Resultados'],['cat','Catálogo'],['cfg','Respaldo']];
+  $('#nav').innerHTML=T.map(([k,l])=>`<button class="${st.tab===k?'on':''}" onclick="st.tab='${k}';render()">${l}</button>`).join('');
+  $('#app').innerHTML={home:viewHome,cap:viewCap,res:viewRes,cat:viewCat,cfg:viewCfg}[st.tab]();
+}
+$('#dt').value=st.date;$('#dt').onchange=e=>{if(e.target.value){st.date=e.target.value;render()}};
+/* sincronización */
+let sb=null,uid=null,dirty=false,pt=null;
+const syncOn=()=>SB_URL&&SB_KEY&&typeof supabase!=='undefined';
+function sync(t){const e=$('#sync');if(e)e.textContent=t}
+function queue(){if(sb&&uid){dirty=true;sync('Guardando…');clearTimeout(pt);pt=setTimeout(push,1200)}}
+async function push(){
+  if(!sb||!uid)return;
+  const{error}=await sb.from('taqueria').upsert({user_id:uid,data:db,updated_at:new Date().toISOString()});
+  if(error){dirty=true;sync('Sin conexión: pendiente')}else{dirty=false;sync('Sincronizado ✓')}
+}
+async function pull(){
+  if(!sb||!uid||dirty)return;
+  const{data,error}=await sb.from('taqueria').select('data').eq('user_id',uid).maybeSingle();
+  if(error)return sync('Sin conexión');
+  const hd=d=>d&&d.notes&&d.notes.length+d.sales.length+d.exp.length>0,r=data&&data.data;
+  if(!r)return push();
+  const lt=db.ts||0,rt=r.ts||0;
+  if(rt>lt||(lt===0&&!hd(db))){db=r;save();location.reload()}
+  else if(lt>rt||(hd(db)&&!hd(r)))push();
+  else sync('Sincronizado ✓');
+}
+function loginView(msg){
+  $('#nav').innerHTML='';$('#out').hidden=true;
+  $('#app').innerHTML=`<div class="card" style="max-width:360px;margin:30px auto"><h2>Iniciar sesión</h2><div class="row"><input id="lm" type="email" placeholder="Correo" style="flex:1 1 100%"><input id="lp" type="password" placeholder="Contraseña" style="flex:1 1 100%" onkeydown="if(event.key==='Enter')login()"><button class="b" onclick="login()">Entrar</button></div>${msg?`<div class="warn">${msg}</div>`:''}</div>`;
+}
+async function login(){
+  const{data,error}=await sb.auth.signInWithPassword({email:$('#lm').value.trim(),password:$('#lp').value});
+  if(error)return loginView('Correo o contraseña incorrectos.');
+  uid=data.user.id;start();
+}
+async function logout(){await sb.auth.signOut();uid=null;loginView()}
+function start(){$('#out').hidden=false;render();sync('Sincronizando…');pull()}
+async function boot(){
+  if(!syncOn())return render();
+  sb=supabase.createClient(SB_URL,SB_KEY);
+  const{data}=await sb.auth.getSession();
+  if(data.session){uid=data.session.user.id;start()}else loginView();
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&uid)dirty?push():pull()});
+window.addEventListener('online',()=>{if(uid&&dirty)push()});
+boot();
+</script>
+</body>
+</html>
